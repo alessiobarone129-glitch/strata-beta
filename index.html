@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>STRATA - Beta mobile</title>
+<style>
+*{box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif;color:#eee;touch-action:none}
+canvas{position:absolute;left:0;top:0;width:100%;height:100%}
+#hud{position:absolute;left:0;right:0;top:0;padding:6px 8px;font-size:12px;background:linear-gradient(#000a,#0000);pointer-events:none}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:3px}
+.bar{flex:1;height:8px;background:#222;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:50%}
+#be{background:#f5b82e}#ba{background:#4ac3ff}#bd{background:#9c9}
+#msg{position:absolute;left:8px;right:8px;top:70px;text-align:center;font-size:13px;background:#000c;border:1px solid #555;border-radius:8px;padding:8px;display:none;pointer-events:none}
+#ctl{position:absolute;left:0;right:0;bottom:0;height:170px;pointer-events:none}
+.b{position:absolute;width:58px;height:58px;border-radius:14px;background:#ffffff22;border:2px solid #ffffff55;color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.b:active,.b.on{background:#ffffff66}
+.a{width:auto;min-width:74px;height:46px;font-size:13px;padding:0 10px;right:10px;text-align:center}
+#panel{position:absolute;inset:0;background:#000d;display:none;overflow:auto;padding:14px;touch-action:pan-y}
+#panel h2{margin:4px 0 8px}
+.it{display:flex;justify-content:space-between;align-items:center;background:#ffffff14;border-radius:8px;padding:8px;margin:6px 0;font-size:13px;gap:8px}
+button.s{background:#f5b82e;border:0;border-radius:8px;padding:9px 12px;font-weight:700;font-size:13px}
+button.s:disabled{background:#555;color:#999}
+button.x{background:#444;color:#fff;border:0;border-radius:8px;padding:10px 16px;margin-top:8px;font-size:14px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud">
+ <div class="row"><span>⚡</span><div class="bar"><i id="be"></i></div><span>💨</span><div class="bar"><i id="ba"></i></div><span>🛠</span><div class="bar"><i id="bd"></i></div></div>
+ <div class="row" style="justify-content:space-between"><span id="t1"></span><span id="t2"></span></div>
+</div>
+<div id="msg"></div>
+<div id="ctl">
+ <div class="b" data-d="up" style="left:68px;bottom:78px">▲</div>
+ <div class="b" data-d="left" style="left:8px;bottom:20px">◀</div>
+ <div class="b" data-d="down" style="left:68px;bottom:20px">▼</div>
+ <div class="b" data-d="right" style="left:128px;bottom:20px">▶</div>
+ <div class="b a" id="bBase" style="bottom:128px">🏠 Base</div>
+ <div class="b a" id="bBeam" style="bottom:74px">🪵 Puntello</div>
+ <div class="b a" id="bDiary" style="bottom:20px">📖 Diario</div>
+</div>
+<div id="panel"></div>
+<script>
+window.onerror=function(m,s,l){var d=document.createElement('div');d.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99;background:#900;color:#fff;font:12px sans-serif;padding:8px';d.textContent='Errore: '+m+' (riga '+l+')';document.body.appendChild(d)};
+var LS={getItem:function(k){try{return window.localStorage.getItem(k)}catch(e){return null}},setItem:function(k,v){try{window.localStorage.setItem(k,v)}catch(e){}},removeItem:function(k){try{window.localStorage.removeItem(k)}catch(e){}}};
+</script>
+<noscript><p style="color:#fff;padding:20px">Abilita JavaScript per giocare.</p></noscript>
+<script>
+// ====== DATI ======
+const W=30,H=210,SURF=6,SHIFT=720;
+// id: [nome,colore,durezza,valore,peso]
+const M={0:['Aria','#000',0,0,0],1:['Terra','#6b4a2f',1,1,1],2:['Argilla','#8a5a44',2,1,1],3:['Sabbia','#c9ad6a',1,1,1],
+4:['Pietra','#6f7178',3,2,1],5:['Carbone','#25252b',3,6,1],6:['Ferro','#c09a82',4,12,1],7:['Rame','#d9783c',4,18,1],
+8:['Cristallo','#6ee7ff',6,60,2],9:['Mattoni antichi','#8a7858',5,15,1],10:['Basalto','#3a3345',7,8,1],11:['Oro','#ffd23f',6,90,2],
+12:['Acqua','#2a6fdb',0,0,0],13:['Gas','#7fbf4a',0,0,0],14:['Lava','#ff5a1f',0,0,0],15:['Roccia base','#111',99,0,0],
+16:['Puntello','#a47a3c',0,0,0],17:['Reperto','#c9a0ff',5,0,0],18:['Detriti','#5a4a3a',1,0,0]};
+const ORES=[5,6,7,8,11];
+const LIM={1:3,2:4,3:2,4:6,5:6,6:7,7:7,9:7,10:8,18:2};
+const UP={
+ pick:{n:'⛏ Piccone',desc:['Pala di ferro','Piccone d\'acciaio','Martello pneumatico','Trivella laser','Trivella al plasma'],v:[2,3,4,6,8],c:[0,120,350,900,2200]},
+ bag:{n:'🎒 Zaino/Esoscheletro',desc:['Zaino base','Zaino rinforzato','Esoscheletro I','Esoscheletro II','Esoscheletro III'],v:[15,30,50,80,120],c:[0,80,250,700,1800]},
+ lamp:{n:'🔦 Illuminazione',desc:['Torcia','Lampada','Faro','Faro a spettro','Sole portatile'],v:[2.5,3.5,5,7,9],c:[0,100,300,800,2000]},
+ vent:{n:'💨 Ventilazione',desc:['Maschera','Filtro','Compressore','Scrubber','Rigeneratore'],v:[1,.75,.55,.4,.25],c:[0,150,450,1100,2500]},
+ en:{n:'🍎 Resistenza',desc:['Base','Allenato','Muscoli','Cyber-nervi','Superuomo'],v:[100,130,170,220,300],c:[0,100,300,800,2000]}
+};
+const RADIO=[
+ [0,'Ines (radio): "Pozzo 14, buongiorno. Il debito non si paga da solo. Scava."'],
+ [10,'Doro (mercante): "Compro tutto, anche la terra. Specialmente se è calda."'],
+ [30,'Ines: "Strano... i sensori segnano vibrazioni regolari. Come un battito."'],
+ [60,'Radio: "...ti sent... ...non rompere... ...(statica)"'],
+ [95,'Ines: "Quelle mura non sono sulle mappe. Non dirlo alla Meridian."'],
+ [135,'Voce sconosciuta: "SEI UN BUON OPERAIO. CONTINUA."'],
+ [170,'ORACOLO: "Il peso sopra di te sono io. Ancora un poco."']];
+const LORE=[
+ '📜 Un\'incisione sulle radici: "Scendete solo se potete risalire."',
+ '📜 Registro audio #1 (operaio Mattia): "La Meridian dice che è carbone. Il carbone non canta."',
+ '📜 Murale: una città luminosa, sotto la terra. Sopra, un cielo grigio.',
+ '📜 Memo Meridian [CENSURATO]: "...il Cinereo NON è un minerale. Non diffondere."',
+ '📜 Registro audio #2 (Mattia): "Ho sentito una voce nel cristallo. Sapeva il nome di mia figlia."',
+ '📜 Murale dei Costruttori: "Il mondo sopra morì. Noi imparammo a ricordare."',
+ '📜 Targa: "ORACOLO – custode della memoria e dell\'equilibrio."',
+ '📜 Registro audio #3 (Mattia): "Più estraggo, più il pavimento trema. Qualcosa si sta spegnendo."',
+ '📜 Il cristallo ricorda: bambini che corrono in un corridoio di luce.',
+ '📜 Memo Meridian: "Estrarre il Cinereo destabilizza la crosta. Accettabile."',
+ '📜 Frammento: "Il pianeta non è stabile da solo. Qualcuno lo tiene insieme."',
+ '📜 Ultimo registro (Mattia): "Non risalgo. Qualcuno deve restare."'];
+
+// ====== STATO ======
+let T=new Uint8Array(W*H),S,px=15,py=5,clock=0,energy=100,air=100,fallN=0,busy=0,held=[],ended=false,panel=false,started=false;
+let cargo={},mult={},cr=new Map(),parts=[],radioSeen={},tc=0,msgT=0,maxDepth=0;
+const g=(x,y)=>x<0||y<0||x>=W||y>=H?15:T[y*W+x];
+const st=(x,y,v)=>{if(x>=0&&y>=0&&x<W&&y<H)T[y*W+x]=v};
+const solid=t=>!(t==0||t==12||t==13||t==14||t==16);
+const rnd=Math.random;
+function newState(){return{money:0,lv:{pick:0,bag:0,lamp:0,vent:0,en:0},beams:3,dura:100,day:1,diary:[],lore:0,frag:0}}
+const power=()=>S.dura>0?UP.pick.v[S.lv.pick]:1;
+const cap=()=>UP.bag.v[S.lv.bag], maxE=()=>UP.en.v[S.lv.en], maxDura=()=>100+40*S.lv.pick;
+const weight=()=>Object.entries(cargo).reduce((a,[k,v])=>a+v*M[k][4],0);
+
+// ====== GENERAZIONE ======
+function gen(){
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  let t=0;
+  if(y>=SURF){
+   const d=y-SURF,r=rnd();
+   if(x==0||x==W-1||y==H-1)t=15;
+   else if(d<20)t=r<.08?3:r<.2?2:1;
+   else if(d<50)t=r<.01?5:r<.2?3:r<.4?2:r<.55?1:4;
+   else if(d<90)t=r<.06?5:(r<.1&&d>40)?6:(r<.13&&d>60)?7:4;
+   else if(d<130)t=r<.006?17:r<.13?9:r<.16?6:r<.19?7:r<.22?5:4;
+   else if(d<170)t=r<.05?8:r<.07?11:r<.27?10:4;
+   else t=r<.03?11:r<.07?8:r<.15?4:10;
+  }
+  T[y*W+x]=t;
+ }
+ // reperti sparsi
+ for(let i=0;i<14;i++){const x=2+(rnd()*(W-4)|0),y=SURF+15+(rnd()*180|0);if(g(x,y)!=15)st(x,y,17)}
+ // stanze delle rovine
+ for(let i=0;i<14;i++){const w=3+(rnd()*4|0),h=2+(rnd()*2|0),x=2+(rnd()*(W-w-4)|0),y=SURF+92+(rnd()*34|0);
+  for(let a=0;a<w;a++)for(let b=0;b<h;b++)st(x+a,y+b,0);
+  for(let a=-1;a<=w;a++){if(g(x+a,y-1)==4)st(x+a,y-1,9);if(g(x+a,y+h)==4)st(x+a,y+h,9)}
+  if(rnd()<.5)st(x+(w/2|0),y+h-1,17);}
+ // tasche di fluidi
+ for(let i=0;i<40;i++){
+  const cx=3+(rnd()*(W-6)|0),cy=SURF+12+(rnd()*185|0),d=cy-SURF,r=2+rnd()*1.6;
+  let ty=rnd()<.5?12:13; if(d>140&&rnd()<.6)ty=14; if(d>90&&ty==12&&rnd()<.6)ty=13; if(d<50&&ty==13)ty=12;
+  for(let a=-3;a<=3;a++)for(let b=-3;b<=3;b++)if(a*a+b*b<=r*r&&g(cx+a,cy+b)!=15)st(cx+a,cy+b,ty);
+ }
+ for(let x=px-2;x<=px+2;x++)for(let y=SURF;y<SURF+4;y++)if(g(x,y)>=12&&g(x,y)<=14)st(x,y,1);
+}
+function rollMarket(){for(const k of [1,2,3,4,5,6,7,8,9,10,11])mult[k]=.8+rnd()*.5}
+
+// ====== SALVATAGGIO ======
+function save(){try{LS.setItem('strata_beta',JSON.stringify({S,cargo,mult,radioSeen,T:btoa(String.fromCharCode.apply(null,T)),clock}))}catch(e){}}
+function load(){try{const d=JSON.parse(LS.getItem('strata_beta'));if(!d)return false;S=d.S;cargo=d.cargo;mult=d.mult;radioSeen=d.radioSeen;clock=d.clock||0;
+ const b=atob(d.T);for(let i=0;i<T.length;i++)T[i]=b.charCodeAt(i);px=15;py=5;energy=maxE();air=100;return true}catch(e){return false}}
+function reset(){LS.removeItem('strata_beta');location.reload()}
+
+// ====== UI ======
+const cv=document.getElementById('c'),cx=cv.getContext('2d'),lc=document.createElement('canvas'),lx=lc.getContext('2d');
+let CW,CH,ts;
+function resize(){CW=cv.width=lc.width=innerWidth;CH=cv.height=lc.height=innerHeight;ts=Math.floor(CW/11)}
+addEventListener('resize',resize);resize();
+const $=id=>document.getElementById(id);
+function msg(t,ms=3500){const m=$('msg');m.textContent=t;m.style.display='block';clearTimeout(msgT);msgT=setTimeout(()=>m.style.display='none',ms)}
+let ac;function beep(f,d,v=.05,ty='square'){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();const o=ac.createOscillator(),g=ac.createGain();o.type=ty;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(ac.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+d);o.stop(ac.currentTime+d)}catch(e){}}
+function openPanel(h){panel=true;$('panel').innerHTML=h;$('panel').style.display='block'}
+function closePanel(){panel=false;$('panel').style.display='none'}
+const depth=()=>Math.max(0,py-SURF+1);
+function hud(){
+ $('be').style.width=energy/maxE()*100+'%';$('ba').style.width=air+'%';$('bd').style.width=Math.max(0,S.dura)/maxDura()*100+'%';
+ const hr=7+clock/60,hh=Math.floor(hr),mm=Math.floor((hr-hh)*60);
+ $('t1').textContent=`Giorno ${S.day} · ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')} · 📏 ${depth()} m`;
+ $('t2').textContent=`🎒 ${weight()}/${cap()} · 💰 $${S.money} · 🪵${S.beams}`;
+ $('bBase').style.display=py<=SURF-1?'flex':'none';
+}
+function shop(){
+ let h=`<h2>🏠 Base – Giorno ${S.day}</h2><div style="font-size:12px;opacity:.8">Debito Meridian: continua a scavare. Mercato di oggi: prezzi variabili (×0.8–1.3).</div>`;
+ let tot=0,rows='';
+ for(const k in cargo)if(cargo[k]>0&&M[k][3]>0){const v=Math.round(cargo[k]*M[k][3]*(mult[k]||1));tot+=v;rows+=`<div>${M[k][0]} ×${cargo[k]} → $${v} <small>(×${(mult[k]||1).toFixed(2)})</small></div>`}
+ h+=`<div class="it"><div><b>Vendita</b>${rows||'<div>Zaino vuoto</div>'}</div><button class="s" ${tot?'':'disabled'} onclick="sell()">Vendi $${tot}</button></div>`;
+ for(const k in UP){const l=S.lv[k],u=UP[k];const nx=l<4?u.c[l+1]:null;
+  h+=`<div class="it"><div>${u.n}<br><small>Liv.${l+1}: ${u.desc[l]}${l<4?' → '+u.desc[l+1]:' (MAX)'}</small></div>${nx!=null?`<button class="s" ${S.money>=nx?'':'disabled'} onclick="buy('${k}')">$${nx}</button>`:''}</div>`}
+ const rc=Math.ceil((maxDura()-S.dura)*.6);
+ h+=`<div class="it"><div>🔧 Ripara attrezzo (${Math.round(S.dura)}/${maxDura()})</div><button class="s" ${S.dura<maxDura()&&S.money>=rc?'':'disabled'} onclick="repair()">$${rc}</button></div>`;
+ h+=`<div class="it"><div>🪵 Puntelli ×5</div><button class="s" ${S.money>=25?'':'disabled'} onclick="beams()">$25</button></div>`;
+ h+=`<div class="it"><div>🍞 Pasto (+40 energia)</div><button class="s" ${S.money>=10?'':'disabled'} onclick="eat()">$10</button></div>`;
+ h+=`<div class="it"><div>🛏 Dormi (nuovo giorno, energia piena, nuovi prezzi)</div><button class="s" onclick="sleep()">Dormi</button></div>`;
+ h+=`<button class="x" onclick="save();closePanel()">Chiudi</button>`;
+ openPanel(h);
+}
+function sell(){let t=0;for(const k in cargo){if(M[k][3]>0)t+=Math.round(cargo[k]*M[k][3]*(mult[k]||1));if(M[k][3]>0)delete cargo[k]}S.money+=t;beep(880,.2);shop()}
+function buy(k){const l=S.lv[k];if(S.money>=UP[k].c[l+1]){S.money-=UP[k].c[l+1];S.lv[k]++;if(k=='pick')S.dura=maxDura();if(k=='en')energy=maxE();beep(660,.2)}shop()}
+function repair(){S.money-=Math.ceil((maxDura()-S.dura)*.6);S.dura=maxDura();shop()}
+function beams(){S.money-=25;S.beams+=5;shop()}
+function eat(){S.money-=10;energy=Math.min(maxE(),energy+40);shop()}
+function sleep(){newDay(false);closePanel()}
+function diary(){
+ let h=`<h2>📖 Diario</h2><div class="it">Frammenti di memoria: ${S.frag} · Profondità massima: ${maxDepth} m</div>`;
+ h+=S.diary.length?S.diary.map(t=>`<div class="it">${t}</div>`).join(''):'<div class="it">Ancora nulla. Scava per trovare reperti e ascolta la radio.</div>';
+ h+=`<button class="x" onclick="closePanel()">Chiudi</button> <button class="x" onclick="if(confirm('Cancellare la partita?'))reset()">Nuova partita</button>`;
+ openPanel(h);
+}
+function newDay(forced){
+ S.day++;clock=0;energy=maxE();air=100;rollMarket();px=15;py=5;fallN=0;
+ msg(forced?'🔔 Fine turno: l\'ascensore ti riporta su. Giorno '+S.day:'🛏 Nuovo giorno '+S.day+'. Prezzi aggiornati.');
+ if(S.day%3==0){let n=0;for(let i=0;i<40;i++){const x=1+(rnd()*(W-2)|0),y=SURF+3+(rnd()*180|0);if(solid(g(x,y))&&g(x,y)!=15&&g(x,y+1)==0&&n<6){st(x,y,18);n++}}
+  setTimeout(()=>msg('🌍 Una scossa ha alterato gli strati...'),4000)}
+ save();
+}
+function faint(why){
+ for(const k in cargo)cargo[k]=Math.floor(cargo[k]/2);
+ msg('😵 '+why+' Ti risvegli in superficie. Hai perso metà del carico.',5000);
+ S.day++;clock=0;energy=maxE()*.6;air=100;px=15;py=5;fallN=0;rollMarket();save();
+}
+function ending(){
+ ended=true;openPanel(`<h2>🌌 Il Nucleo Cavo</h2><p>Sotto di te si apre una sala immensa. Cristalli come costellazioni. Una voce, finalmente senza statica:</p>
+ <p><i>"ORACOLO. Io tengo il mondo insieme. Tu hai tre scelte, operaio."</i></p>
+ <div class="it"><div><b>Estrai</b><br><small>Il mondo sopra si salva... per ora.</small></div><button class="s" onclick="fin(1)">Scegli</button></div>
+ <div class="it"><div><b>Sigilla</b><br><small>Chiudi il pozzo. Il debito resta.</small></div><button class="s" onclick="fin(2)">Scegli</button></div>
+ <div class="it"><div><b>Simbiosi</b><br><small>Resta con ORACOLO.</small></div><button class="s" onclick="fin(3)">Scegli</button></div>`);
+}
+function fin(n){const t={1:'FINALE: ESTRAZIONE. Consegni il Cinereo. La luce torna in superficie, ma sotto qualcosa si è spento per sempre.',2:'FINALE: SIGILLO. Il pozzo si chiude. Il mondo declina lentamente, ma qualcuno, giù, continua a vegliare.',3:'FINALE: SIMBIOSI. Il tuo respiro diventa un battito. Il mondo è stabile. Tu non risalirai.'}[n];
+ openPanel(`<h2>Fine della beta</h2><p>${t}</p><p>Frammenti trovati: ${S.frag}/${LORE.length}. Grazie per aver giocato alla beta di STRATA!</p><button class="x" onclick="ended=false;px=15;py=5;closePanel()">Continua a scavare</button> <button class="x" onclick="reset()">Nuova partita</button>`)}
+
+// ====== AZIONI ======
+function dust(x,y,c,n=6){for(let i=0;i<n;i++)parts.push({x:(x+.5)*ts,y:(y+.5)*ts,vx:(rnd()-.5)*90,vy:(rnd()-.8)*90,l:.6+rnd()*.4,c})}
+function addItem(t){
+ if(M[t][3]==0&&t!=17)return;
+ if(weight()+M[t][4]>cap()){msg('🎒 Zaino pieno! Torna a vendere.',1500);return}
+ cargo[t]=(cargo[t]||0)+1;
+}
+function dig(x,y,t){
+ const h=M[t][2];
+ if(h>power()){msg(S.dura<=0?'🔧 Attrezzo rotto! Risali a ripararlo.':'⛔ Troppo duro: serve un attrezzo migliore ('+M[t][0]+')',1800);busy=performance.now()+300;beep(90,.1);return}
+ if(energy<=0)return;
+ energy-=h*.7;S.dura-=h*.4;if(S.dura<=0){S.dura=0;msg('🔧 L\'attrezzo si è rotto!')}
+ clock+=h*1.2+.3;
+ busy=performance.now()+(80+h*70)*(3/(power()+1));
+ if(t==17){const l=LORE[Math.min(S.lore,LORE.length-1)];if(S.lore<LORE.length){S.lore++;S.frag++;S.diary.push(l);msg(l,6000)}else msg('Un reperto vuoto. Hai già trovato tutto.')}
+ else addItem(t);
+ st(x,y,0);dust(x,y,M[t][1]);beep(120+h*30+rnd()*20,.07);
+ chk(x,y);chk(x-1,y);chk(x+1,y);
+ const n=[g(x,y-1),g(x+1,y),g(x-1,y),g(x,y+1)];
+ if(n.includes(14))msg('🔥 LAVA! Allontanati!',2000);else if(n.includes(12))msg('💧 Hai aperto una falda!',2000);else if(n.includes(13))msg('☣ Sacca di gas!',2000);
+}
+function chk(x,y){
+ if(y<=SURF)return;
+ const open=a=>{const t=g(a,y);return !solid(t)&&t!=16};
+ if(!open(x))return;let l=x,r=x;while(open(l-1)&&x-l<12)l--;while(open(r+1)&&r-x<12)r++;
+ const w=r-l+1;
+ for(let i=l;i<=r;i++){const c=g(i,y-1);if(solid(c)&&c!=15&&c!=17&&w>(LIM[c]||5)&&!cr.has((y-1)*W+i)){cr.set((y-1)*W+i,performance.now()+1500);if(i==x)msg('⚠ Il soffitto scricchiola! Metti un puntello!',1800)}}
+}
+function act(dx,dy){
+ const now=performance.now();if(now<busy)return;
+ const nx=px+dx,ny=py+dy,t=g(nx,ny);
+ if(t==15){busy=now+150;return}
+ if(solid(t)){if(py<SURF-0&&dy<=0&&ny<SURF){busy=now+100;return}dig(nx,ny,t);return}
+ if(dy<0){if(g(px,py)!=12){energy-=1.2;clock+=.4}busy=now+210}else busy=now+(g(nx,ny)==12?220:120);
+ if(dx&&py<SURF)busy=now+100;
+ px=nx;py=ny;clock+=.2;
+}
+function beam(){
+ if(py<=SURF||panel)return;if(S.beams<=0){msg('Niente puntelli! Compra alla base.',1500);return}
+ if(g(px,py)==0||g(px,py)==13){S.beams--;st(px,py,16);beep(200,.12);chk(px,py)}
+}
+
+// ====== FISICA ======
+function tick(){
+ tc++;
+ for(let y=H-2;y>=0;y--)for(let x=1;x<W-1;x++){
+  const t=T[y*W+x];if(!t)continue;
+  if(t==3||t==18){const b=g(x,y+1);
+   if(px==x&&py==y+1){energy-=18;msg('🪨 Ti è caduto addosso qualcosa!',1500);st(x,y,0);beep(70,.2,.1)}
+   else if(b==0||b==12||b==13||b==14){st(x,y+1,t);st(x,y,b==0?0:b)}}
+  else if(t==12||(t==14&&(tc&1))){
+   const b=g(x,y+1);
+   if(b==0||b==13){st(x,y+1,t);st(x,y,b)}
+   else{const d=rnd()<.5?-1:1;if(g(x+d,y)==0){st(x+d,y,t);st(x,y,0)}}
+   if(t==12){if(g(x,y-1)==14||g(x+1,y)==14||g(x-1,y)==14||g(x,y+1)==14){for(const[a,b2]of[[0,-1],[1,0],[-1,0],[0,1]])if(g(x+a,y+b2)==14)st(x+a,y+b2,10);st(x,y,0);dust(x,y,'#ddd',8)}}
+  }
+  else if(t==13){
+   if(y<SURF){st(x,y,0);continue}
+   if(g(x,y-1)==0){st(x,y-1,13);st(x,y,0)}else if(rnd()<.3){const d=rnd()<.5?-1:1;if(g(x+d,y)==0){st(x+d,y,13);st(x,y,0)}}
+  }
+ }
+ const c=g(px,py),b=g(px,py+1);
+ if(c!=12&&(b==0||b==13)&&c!=16){py++;fallN++}
+ else if(fallN>0){if(fallN>3){energy-=(fallN-3)*5;msg('💥 Caduta!',1000);beep(60,.2,.1)}fallN=0}
+ const now=performance.now();
+ for(const [k,tm] of cr){if(now>tm){cr.delete(k);const x=k%W,y=(k/W)|0;
+  if(solid(g(x,y))&&g(x,y)!=15){
+   let l=x,r=x;const o=a=>{const q=g(a,y+1);return !solid(q)&&q!=16};
+   if(o(x)){while(o(l-1)&&x-l<12)l--;while(o(r+1)&&r-x<12)r++}
+   if(r-l+1>(LIM[g(x,y)]||5)){st(x,y,18);dust(x,y,'#6b4a2f',10);beep(55,.3,.1,'sawtooth');chk(x,y)}}}}
+}
+
+// ====== LOOP ======
+let last=performance.now(),acc=0;
+function loop(now){
+ const dt=Math.min(.1,(now-last)/1000);last=now;
+ if(started&&!panel&&!ended){
+  acc+=dt;while(acc>.1){tick();acc-=.1}
+  if(held.length){const d=held[held.length-1];act(d=='left'?-1:d=='right'?1:0,d=='up'?-1:d=='down'?1:0)}
+  const d=depth(),c=g(px,py);
+  if(py<=SURF-1){air=Math.min(100,air+10*dt);if(Math.abs(px-15)<20)if(!cr.size&&S.dura>=0)save_throttle()}
+  else{let r=.35*(1+d/120)*UP.vent.v[S.lv.vent];if(c==12)r*=6;if(c==13){r*=7;energy-=4*dt}air-=r*dt}
+  if(c==14){energy-=30*dt}
+  for(const[rd,t]of RADIO)if(d>=rd&&!radioSeen[rd]){radioSeen[rd]=1;S.diary.push('📻 '+t);msg('📻 '+t,6000)}
+  if(d>maxDepth)maxDepth=d;
+  if(clock>=SHIFT)newDay(true);
+  else if(energy<=0)faint('Sei crollato dalla fatica.');
+  else if(air<=0)faint('Aria esaurita.');
+  if(d>=195&&!ended)ending();
+  for(const p of parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=200*dt;p.l-=dt}parts=parts.filter(p=>p.l>0);
+ }
+ hud();draw(now);requestAnimationFrame(loop);
+}
+let lastSave=0;function save_throttle(){const n=performance.now();if(n-lastSave>15000){lastSave=n;save()}}
+
+// ====== RENDER ======
+function hash(x,y){let h=x*374761393+y*668265263;h=(h^(h>>13))*1274126177;return(h^(h>>16))&255}
+function draw(now){
+ const camX=px*ts+ts/2-CW/2,camY=py*ts+ts/2-CH*.42;
+ cx.fillStyle='#0d0a0c';cx.fillRect(0,0,CW,CH);
+ const skyB=(SURF*ts)-camY;
+ if(skyB>0){const gr=cx.createLinearGradient(0,0,0,skyB);gr.addColorStop(0,'#7d8a8f');gr.addColorStop(1,'#c9b99a');cx.fillStyle=gr;cx.fillRect(0,0,CW,skyB)}
+ const x0=Math.max(0,Math.floor(camX/ts)),x1=Math.min(W-1,Math.floor((camX+CW)/ts)),y0=Math.max(0,Math.floor(camY/ts)),y1=Math.min(H-1,Math.floor((camY+CH)/ts));
+ const lava=[];
+ for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+  const t=g(x,y);if(t==0)continue;
+  let sx=x*ts-camX,sy=y*ts-camY;const hv=hash(x,y),k=hv%5;
+  const ck=cr.has(y*W+x);if(ck){sx+=Math.sin(now/30)*1.5}
+  if(t==12){cx.fillStyle='rgba(42,111,219,.65)';cx.fillRect(sx,sy,ts,ts);continue}
+  if(t==13){cx.fillStyle='rgba(127,191,74,'+(.35+.15*Math.sin(now/300+x))+')';cx.fillRect(sx,sy,ts,ts);continue}
+  if(t==14){cx.fillStyle=`rgb(255,${70+Math.sin(now/200+x+y)*30|0},20)`;cx.fillRect(sx,sy,ts,ts);lava.push([sx,sy]);continue}
+  if(t==16){cx.fillStyle='#a47a3c';cx.fillRect(sx,sy+ts*.35,ts,ts*.2);cx.fillRect(sx+ts*.1,sy,ts*.12,ts);cx.fillRect(sx+ts*.78,sy,ts*.12,ts);continue}
+  const ore=ORES.includes(t);
+  cx.fillStyle=ore?(y-SURF>130?M[10][1]:M[4][1]):M[t][1];cx.fillRect(sx,sy,ts+1,ts+1);
+  cx.fillStyle='rgba(0,0,0,'+k*.045+')';cx.fillRect(sx,sy,ts+1,ts+1);
+  if(ore){cx.fillStyle=M[t][1];for(let i=0;i<4;i++){const a=hash(x+i,y*3+i);cx.fillRect(sx+ts*.12+(a%60)/100*ts,sy+ts*.12+((a>>3)%60)/100*ts,ts*.2,ts*.2)}
+   if(t==8||t==11){cx.fillStyle='rgba(255,255,255,'+(.3+.3*Math.sin(now/250+x*y))+')';cx.fillRect(sx+ts*.4,sy+ts*.4,ts*.1,ts*.1)}}
+  if(t==17){cx.fillStyle='#c9a0ff';cx.fillRect(sx+ts*.25,sy+ts*.25,ts*.5,ts*.5);cx.fillStyle='#fff';cx.fillRect(sx+ts*.4,sy+ts*.4,ts*.2,ts*.2)}
+  if(t==9){cx.strokeStyle='rgba(0,0,0,.35)';cx.strokeRect(sx+1,sy+1,ts-2,ts/2-1);cx.strokeRect(sx+ts/2,sy+ts/2,ts/2-1,ts/2-1)}
+  if(t==18){cx.fillStyle='rgba(0,0,0,.3)';cx.fillRect(sx+ts*.2,sy+ts*.3,ts*.3,ts*.3)}
+  if(y==SURF&&g(x,y-1)==0){cx.fillStyle='#4a7a3a';cx.fillRect(sx,sy,ts+1,ts*.2)}
+  if(ck){cx.strokeStyle='#000';cx.beginPath();cx.moveTo(sx+ts*.2,sy);cx.lineTo(sx+ts*.5,sy+ts*.5);cx.lineTo(sx+ts*.3,sy+ts);cx.stroke()}
+ }
+ const bx=19*ts-camX,by=(SURF-2)*ts-camY;
+ cx.fillStyle='#5a3d28';cx.fillRect(bx,by,ts*2.4,ts*2);cx.fillStyle='#a33';cx.beginPath();cx.moveTo(bx-ts*.2,by);cx.lineTo(bx+ts*1.2,by-ts*.7);cx.lineTo(bx+ts*2.6,by);cx.fill();
+ cx.fillStyle='#ffd23f';cx.fillRect(bx+ts*.3,by+ts*.6,ts*.5,ts*.6);cx.fillStyle='#fff';cx.font=(ts*.35|0)+'px sans-serif';cx.fillText('BASE',bx+ts*1.1,by+ts*1.2);
+ const rx=12*ts-camX;cx.fillStyle='#444';cx.fillRect(rx,(SURF-3)*ts-camY,ts*.2,ts*3);cx.fillRect(rx-ts*.4,(SURF-3)*ts-camY,ts,ts*.2);
+ const sx=px*ts-camX,sy=py*ts-camY;
+ cx.fillStyle='#e8601c';cx.fillRect(sx+ts*.25,sy+ts*.35,ts*.5,ts*.55);
+ cx.fillStyle='#f5d0a0';cx.fillRect(sx+ts*.3,sy+ts*.15,ts*.4,ts*.25);
+ cx.fillStyle='#ffd23f';cx.fillRect(sx+ts*.25,sy+ts*.08,ts*.5,ts*.14);
+ cx.fillStyle='#fff';cx.fillRect(sx+ts*.45,sy+ts*.05,ts*.1,ts*.08);
+ for(const p of parts){cx.fillStyle=p.c;cx.globalAlpha=Math.min(1,p.l*2);cx.fillRect(p.x-camX,p.y-camY,4,4)}cx.globalAlpha=1;
+ const d=depth();
+ if(d>0){
+  const a=Math.min(.96,d/14);
+  lx.globalCompositeOperation='source-over';lx.clearRect(0,0,CW,CH);lx.fillStyle='rgba(4,2,8,'+a+')';lx.fillRect(0,0,CW,CH);
+  lx.globalCompositeOperation='destination-out';
+  const fl=UP.lamp.v[S.lv.lamp]*ts*(1+.03*Math.sin(now/90)),lowE=energy<20?.6:1;
+  let gr=lx.createRadialGradient(sx+ts/2,sy+ts/2,ts*.3,sx+ts/2,sy+ts/2,fl*lowE);gr.addColorStop(0,'rgba(0,0,0,1)');gr.addColorStop(1,'rgba(0,0,0,0)');lx.fillStyle=gr;lx.fillRect(0,0,CW,CH);
+  for(const[lxp,lyp]of lava){gr=lx.createRadialGradient(lxp+ts/2,lyp+ts/2,0,lxp+ts/2,lyp+ts/2,ts*2.5);gr.addColorStop(0,'rgba(0,0,0,.9)');gr.addColorStop(1,'rgba(0,0,0,0)');lx.fillStyle=gr;lx.fillRect(lxp-ts*2,lyp-ts*2,ts*5,ts*5)}
+  cx.drawImage(lc,0,0);
+  if(d>130){cx.fillStyle='rgba(255,60,0,'+Math.min(.18,(d-130)/400)+')';cx.fillRect(0,0,CW,CH)}
+ }
+}
+
+// ====== INPUT ======
+document.querySelectorAll('[data-d]').forEach(b=>{const d=b.dataset.d;
+ const on=e=>{e.preventDefault();started=true;if(!held.includes(d))held.push(d);b.classList.add('on')};
+ const off=e=>{e.preventDefault();held=held.filter(x=>x!=d);b.classList.remove('on')};
+ b.addEventListener('pointerdown',on);['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,off))});
+$('bBase').addEventListener('pointerdown',e=>{e.preventDefault();held=[];shop()});
+$('bBeam').addEventListener('pointerdown',e=>{e.preventDefault();beam()});
+$('bDiary').addEventListener('pointerdown',e=>{e.preventDefault();held=[];diary()});
+const km={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',d:'right',w:'up',s:'down'};
+addEventListener('keydown',e=>{started=true;const d=km[e.key];if(d&&!held.includes(d))held.push(d);if(e.key=='b')beam()});
+addEventListener('keyup',e=>{const d=km[e.key];if(d)held=held.filter(x=>x!=d)});
+
+// ====== AVVIO ======
+S=newState();
+if(!load()){gen();rollMarket()}
+openPanel(`<h2>⛏ STRATA <small>beta mobile</small></h2>
+<p>Sei un operaio indebitato con la <b>Meridian Extraction Authority</b>. Scava il pozzo 14, vendi i minerali e scendi sempre più in profondità. Cosa si nasconde sotto?</p>
+<div class="it"><div><b>Comandi</b><br>◀ ▶ ▲ ▼ : muoviti. Spingi contro un blocco per scavarlo (tieni premuto). ▲ ti fa arrampicare.<br>🪵 Puntello: mettilo nei tunnel larghi per evitare crolli.<br>🏠 Base: appare in superficie (vendi, potenzia, ripara, dormi).</div></div>
+<div class="it"><div><b>Rischi</b><br>Aria ⚡ energia · usura attrezzo · crolli dei soffitti (tunnel troppo larghi) · falde d'acqua · gas · lava (acqua + lava = basalto). Il turno dura 12 ore: sirena = risalita forzata.</div></div>
+<div class="it"><div><b>Obiettivo beta</b><br>Raggiungi i 195 m e scopri i 12 reperti.</div></div>
+<button class="x" onclick="started=true;closePanel()">${LS.getItem('strata_beta')?'Continua':'Inizia'}</button>`);
+requestAnimationFrame(loop);
+</script></body></html>
